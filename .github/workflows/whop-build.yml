@@ -40,14 +40,7 @@ jobs:
 
   build:
     needs: assemble
-    strategy:
-      matrix:
-        include:
-          - arch: x86_64
-            runner: blacksmith-32vcpu-ubuntu-2404
-          - arch: aarch64
-            runner: blacksmith-32vcpu-ubuntu-2404-arm
-    runs-on: ${{ matrix.runner }}
+    runs-on: blacksmith-32vcpu-ubuntu-2404-arm
     timeout-minutes: 360
     env:
       TAG: ${{ needs.assemble.outputs.tag }}
@@ -62,32 +55,27 @@ jobs:
           docker buildx build -f docker/Dockerfile \
             --build-arg "GIT_SHA=$(git rev-parse HEAD)" \
             --build-arg "CARGO_PROFILE=production" \
-            -t "$IMAGE:$TAG-${{ matrix.arch }}" \
+            -t "$IMAGE:$TAG" \
             --progress plain \
             --builder=container \
             --load \
-            --cache-to "type=registry,ref=$IMAGE-build-cache:${{ matrix.arch }}" \
-            --cache-from "type=registry,ref=$IMAGE-build-cache:${{ matrix.arch }}" \
+            --cache-to "type=registry,ref=$IMAGE-build-cache:aarch64" \
+            --cache-from "type=registry,ref=$IMAGE-build-cache:aarch64" \
             .
       - name: Check the image starts
         run: |
-          container_id=$(docker run -d "$IMAGE:$TAG-${{ matrix.arch }}" playground)
+          container_id=$(docker run -d "$IMAGE:$TAG" playground)
           sleep 10
           if [ "$(docker inspect --format='{{.State.Status}}' "$container_id")" != "running" ]; then
             docker logs "$container_id"
             exit 1
           fi
       - name: Push
-        run: docker push "$IMAGE:$TAG-${{ matrix.arch }}"
+        run: docker push "$IMAGE:$TAG"
 
-  publish:
+  release:
     needs: [assemble, build]
     runs-on: ubuntu-latest
-    env:
-      TAG: ${{ needs.assemble.outputs.tag }}
     steps:
-      - name: Publish one multi-arch tag and a release
-        run: |
-          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          docker buildx imagetools create -t "$IMAGE:$TAG" "$IMAGE:$TAG-x86_64" "$IMAGE:$TAG-aarch64"
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-from-tag --verify-tag
+      - name: Publish a release with the patch list
+        run: gh release create "${{ needs.assemble.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --title "${{ needs.assemble.outputs.tag }}" --notes-from-tag --verify-tag

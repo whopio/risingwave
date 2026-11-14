@@ -47,8 +47,10 @@ It needs `gh` with access to the listed repositories.
 Run **Build patched RisingWave** on this branch (Actions tab, or `gh workflow run whop-build.yml --repo whopio/risingwave --ref whop`). It:
 
 1. assembles the patched tree and pushes it as tag `<base>-whop.<n>`, with the patch list as the tag message;
-2. builds the image natively on `x86_64` and `aarch64` (prod runs on ARM64), checks that it starts, and pushes `ghcr.io/whopio/risingwave:<tag>-<arch>`;
-3. publishes the multi-arch tag `ghcr.io/whopio/risingwave:<tag>` and a release with the patch list.
+2. builds the image on an ARM runner (prod runs on ARM64 only), checks that it starts, and pushes `ghcr.io/whopio/risingwave:<tag>`;
+3. publishes a release with the patch list.
+
+The image is `linux/arm64` only. On an x86 machine, run it with emulation (`--platform linux/arm64`) or test with the official image of the base release.
 
 `SELECT version()` on a running node shows the commit of that tag.
 
