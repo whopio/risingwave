@@ -86,4 +86,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Publish a release with the patch list
-        run: gh release create "${{ needs.assemble.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --title "${{ needs.assemble.outputs.tag }}" --notes-from-tag --verify-tag
+        env:
+          TAG: ${{ needs.assemble.outputs.tag }}
+        run: |
+          tag_object=$(gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" --jq .object.sha)
+          notes=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object" --jq .message)
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes "$notes" --verify-tag
