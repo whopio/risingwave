@@ -1,0 +1,3 @@
+base v3.1.1
+
+pr risingwavelabs/risingwave#27977 Source backfill no longer loses rows when its Kafka reader reaches a partition EOF

@@ -1,0 +1,93 @@
+name: Build patched RisingWave
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: whop-build
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Apply the patches to the base release
+        run: |
+          git clone --quiet --depth 1 --branch "$GITHUB_REF_NAME" "https://github.com/$GITHUB_REPOSITORY" tooling
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          tooling/assemble build | tee patches.txt
+          { echo '```'; cat patches.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Tag the patched tree
+        id: tag
+        working-directory: build
+        run: |
+          base=$(awk '$1 == "base" { print $2 }' ../tooling/patches)
+          last=$(git ls-remote --tags "https://github.com/$GITHUB_REPOSITORY" "refs/tags/$base-whop.*" | sed -E 's/.*-whop\.([0-9]+)$/\1/' | sort -n | tail -1)
+          tag="$base-whop.$(( ${last:-0} + 1 ))"
+          git tag -a "$tag" -F ../patches.txt
+          git push --quiet "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY" "refs/tags/$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: assemble
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: blacksmith-32vcpu-ubuntu-2404
+          - arch: aarch64
+            runner: blacksmith-32vcpu-ubuntu-2404-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    env:
+      TAG: ${{ needs.assemble.outputs.tag }}
+    steps:
+      - name: Check out the patched tree
+        run: git clone --quiet --depth 1 --branch "$TAG" "https://github.com/$GITHUB_REPOSITORY" risingwave
+      - name: Build the image as upstream's ci/scripts/docker.sh does
+        working-directory: risingwave
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx create --name container --driver=docker-container
+          docker buildx build -f docker/Dockerfile \
+            --build-arg "GIT_SHA=$(git rev-parse HEAD)" \
+            --build-arg "CARGO_PROFILE=production" \
+            -t "$IMAGE:$TAG-${{ matrix.arch }}" \
+            --progress plain \
+            --builder=container \
+            --load \
+            --cache-to "type=registry,ref=$IMAGE-build-cache:${{ matrix.arch }}" \
+            --cache-from "type=registry,ref=$IMAGE-build-cache:${{ matrix.arch }}" \
+            .
+      - name: Check the image starts
+        run: |
+          container_id=$(docker run -d "$IMAGE:$TAG-${{ matrix.arch }}" playground)
+          sleep 10
+          if [ "$(docker inspect --format='{{.State.Status}}' "$container_id")" != "running" ]; then
+            docker logs "$container_id"
+            exit 1
+          fi
+      - name: Push
+        run: docker push "$IMAGE:$TAG-${{ matrix.arch }}"
+
+  publish:
+    needs: [assemble, build]
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.assemble.outputs.tag }}
+    steps:
+      - name: Publish one multi-arch tag and a release
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx imagetools create -t "$IMAGE:$TAG" "$IMAGE:$TAG-x86_64" "$IMAGE:$TAG-aarch64"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-from-tag --verify-tag

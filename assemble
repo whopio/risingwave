@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# assemble <dir>: clones the base release into <dir> and commits each patch in `patches` on top of it.
+set -euo pipefail
+
+patches=$(realpath "$(dirname "$0")/patches")
+base=$(awk '$1 == "base" { print $2 }' "$patches")
+git clone --quiet --filter=blob:none --no-checkout https://github.com/risingwavelabs/risingwave "$1"
+cd "$1"
+git -c advice.detachedHead=false checkout --quiet "refs/tags/$base"
+echo "base $base $(git rev-parse --short HEAD)"
+
+describe() {
+	case $1 in
+	pr) gh api "repos/${2%%#*}/pulls/${2##*#}" --jq '.title' ;;
+	commit) gh api "repos/${2%%@*}/commits/${2##*@}" --jq '.commit.message | split("\n")[0]' ;;
+	esac
+}
+
+author() {
+	case $1 in
+	pr) gh api "repos/${2%%#*}/pulls/${2##*#}/commits" --jq '.[0].commit.author | "\(.name) <\(.email)>"' ;;
+	commit) gh api "repos/${2%%@*}/commits/${2##*@}" --jq '.commit.author | "\(.name) <\(.email)>"' ;;
+	esac
+}
+
+diff_of() {
+	case $1 in
+	pr) gh api "repos/${2%%#*}/pulls/${2##*#}" -H "Accept: application/vnd.github.diff" ;;
+	commit) gh api "repos/${2%%@*}/commits/${2##*@}" -H "Accept: application/vnd.github.diff" ;;
+	esac
+}
+
+while read -r kind ref note; do
+	patch=$(mktemp)
+	diff_of "$kind" "$ref" >"$patch"
+	if git apply --check "$patch" 2>/dev/null; then
+		git apply --index "$patch"
+		git commit --quiet --author "$(author "$kind" "$ref")" -m "$(describe "$kind" "$ref")" -m "Patch: $kind $ref" -m "$note"
+		echo "applied $kind $ref $(git rev-parse --short HEAD) $note"
+	elif git apply --reverse --check "$patch" 2>/dev/null; then
+		echo "in base $kind $ref (remove it from patches) $note"
+	else
+		echo "conflict $kind $ref does not apply to $base:" >&2
+		git apply --check "$patch" >&2 || true
+		exit 1
+	fi
+	rm -f "$patch"
+done < <(grep -E '^(pr|commit) ' "$patches")
+
+git rm -r --quiet .github/workflows
+git commit --quiet -m "Remove upstream workflows so they never run in the fork"
