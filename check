@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# check <image>: runs every check in checks/ against <image>.
+set -euo pipefail
+for check in "$(dirname "$0")"/checks/*/run.sh; do
+	echo "== $check"
+	RW_IMAGE=$1 "$check"
+done

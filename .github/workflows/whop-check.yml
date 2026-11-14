@@ -1,0 +1,26 @@
+name: Check a patched RisingWave image
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Image tag in ghcr.io/whopio/risingwave, e.g. v3.1.1-whop.1
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: blacksmith-8vcpu-ubuntu-2404-arm
+    timeout-minutes: 60
+    steps:
+      - name: Run every check against the image
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}:${{ inputs.tag }}
+        run: |
+          git clone --quiet "https://github.com/$GITHUB_REPOSITORY" tooling
+          git -C tooling checkout --quiet "$GITHUB_SHA"
+          pipx install --quiet uv
+          docker pull --quiet "$IMAGE"
+          tooling/check "$IMAGE"

@@ -78,6 +78,13 @@ jobs:
             docker logs "$container_id"
             exit 1
           fi
+          docker rm -f "$container_id"
+      - name: Run the checks of the patches
+        run: |
+          git clone --quiet "https://github.com/$GITHUB_REPOSITORY" tooling
+          git -C tooling checkout --quiet "$GITHUB_SHA"
+          pipx install --quiet uv
+          tooling/check "$IMAGE:$TAG"
       - name: Push
         run: docker push "$IMAGE:$TAG"
 

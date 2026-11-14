@@ -8,7 +8,10 @@ This branch builds the RisingWave image Whop runs: an official RisingWave releas
 |---|---|
 | `patches` | The base release and the patches, in order. |
 | `assemble` | Clones the base release and commits each patch on top of it. |
-| `.github/workflows/whop-build.yml` | Assembles, tags, builds and publishes an image. |
+| `check` | Runs every check in `checks/` against an image. |
+| `checks/<name>/run.sh` | One check per patch: fails if the bug the patch fixes comes back. |
+| `.github/workflows/whop-build.yml` | Assembles, tags, builds, checks and publishes an image. |
+| `.github/workflows/whop-check.yml` | Runs the checks against an image that is already published. |
 
 ## The patch list
 
@@ -47,12 +50,22 @@ It needs `gh` with access to the listed repositories.
 Run **Build patched RisingWave** on this branch (Actions tab, or `gh workflow run whop-build.yml --repo whopio/risingwave --ref whop`). It:
 
 1. assembles the patched tree and pushes it as tag `<base>-whop.<n>`, with the patch list as the tag message;
-2. builds the image on an ARM runner (prod runs on ARM64 only), checks that it starts, and pushes `ghcr.io/whopio/risingwave:<tag>`;
+2. builds the image on an ARM runner (prod runs on ARM64 only), checks that it starts, runs `./check` against it, and only then pushes `ghcr.io/whopio/risingwave:<tag>`;
 3. publishes a release with the patch list.
 
 The image is `linux/arm64` only. On an x86 machine, run it with emulation (`--platform linux/arm64`) or test with the official image of the base release.
 
 `SELECT version()` on a running node shows the commit of that tag.
+
+## Checks
+
+A check is a directory under `checks/` with a `run.sh` that reads the image from `RW_IMAGE` and exits non-zero when the bug is back. `checks/source-backfill-handoff-loss` replays risingwavelabs/risingwave#27976: on the official v3.1.1 image it loses 99 of 100 rows and fails.
+
+```bash
+./check ghcr.io/whopio/risingwave:v3.1.1-whop.1
+```
+
+The images are ARM64, so run checks on an ARM machine, or run **Check a patched RisingWave image** in Actions. The checks need Docker and `uv`.
 
 ## Who can do what
 
@@ -75,4 +88,4 @@ Prod pins the image in the monorepo: `RISINGWAVE_IMAGE` in `infra/pulumi/src/ris
 ## Rules for patches
 
 - Keep a patch to behavior. Do not change files under `proto/`, meta migrations or how state is stored, so the official image of the same release can always replace ours.
-- Each patch needs a test that fails without it.
+- Give a patch a check under `checks/` when its bug can be reproduced.
