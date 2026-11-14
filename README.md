@@ -54,6 +54,20 @@ The image is `linux/arm64` only. On an x86 machine, run it with emulation (`--pl
 
 `SELECT version()` on a running node shows the commit of that tag.
 
+## Who can do what
+
+Org-wide roles give many people write access to this repository, so rules decide what they can do:
+
+| Rule | Effect |
+|---|---|
+| Ruleset "Only org admins push branches" | Only org admins create, push to or delete any branch. |
+| Protection on `whop` | Only `jjantschulev` pushes to or merges into `whop`, admins included. |
+| Ruleset "Only org admins and the build deploy key push tags" | Only org admins and the build's deploy key create, move or delete tags. |
+| Environment `build` | Only runs on `whop` can read `BUILD_DEPLOY_KEY`, the deploy key that pushes build tags. |
+| `if: github.actor == 'jjantschulev'` in the workflow | Only `jjantschulev` starts a build. |
+
+Prod should pin the image by digest (`ghcr.io/whopio/risingwave:<tag>@sha256:...`), because anyone with write access to this repository can push to its package.
+
 ## Run it
 
 Prod pins the image in the monorepo: `RISINGWAVE_IMAGE` in `infra/pulumi/src/risingwave/nodes.ts`. Set it to `ghcr.io/whopio/risingwave:<tag>`. To go back to the official image, set it back to `ghcr.io/risingwavelabs/risingwave:<base>`. This works because patches change behavior only.

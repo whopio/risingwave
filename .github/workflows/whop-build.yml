@@ -16,7 +16,9 @@ env:
 
 jobs:
   assemble:
+    if: github.actor == 'jjantschulev'
     runs-on: ubuntu-latest
+    environment: build
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
@@ -30,12 +32,18 @@ jobs:
       - name: Tag the patched tree
         id: tag
         working-directory: build
+        env:
+          BUILD_DEPLOY_KEY: ${{ secrets.BUILD_DEPLOY_KEY }}
         run: |
           base=$(awk '$1 == "base" { print $2 }' ../tooling/patches)
           last=$(git ls-remote --tags "https://github.com/$GITHUB_REPOSITORY" "refs/tags/$base-whop.*" | sed -E 's/.*-whop\.([0-9]+)$/\1/' | sort -n | tail -1)
           tag="$base-whop.$(( ${last:-0} + 1 ))"
           git tag -a "$tag" -F ../patches.txt
-          git push --quiet "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY" "refs/tags/$tag"
+          install -d -m 700 ~/.ssh
+          install -m 600 /dev/null ~/.ssh/build_key
+          printf '%s\n' "$BUILD_DEPLOY_KEY" > ~/.ssh/build_key
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/build_key -o IdentitiesOnly=yes" git push --quiet "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
   build:
