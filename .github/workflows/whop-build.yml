@@ -50,6 +50,8 @@ jobs:
     needs: assemble
     runs-on: blacksmith-32vcpu-ubuntu-2404-arm
     timeout-minutes: 360
+    outputs:
+      image: ${{ steps.push.outputs.image }}
     env:
       TAG: ${{ needs.assemble.outputs.tag }}
     steps:
@@ -86,7 +88,10 @@ jobs:
           pipx install --quiet uv
           tooling/check "$IMAGE:$TAG"
       - name: Push
-        run: docker push "$IMAGE:$TAG"
+        id: push
+        run: |
+          docker push "$IMAGE:$TAG"
+          echo "image=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$TAG")" >> "$GITHUB_OUTPUT"
 
   release:
     needs: [assemble, build]
@@ -95,7 +100,9 @@ jobs:
       - name: Publish a release with the patch list
         env:
           TAG: ${{ needs.assemble.outputs.tag }}
+          PINNED_IMAGE: ${{ needs.build.outputs.image }}
         run: |
           tag_object=$(gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" --jq .object.sha)
-          notes=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object" --jq .message)
+          patches=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object" --jq .message)
+          notes=$(printf 'Image: `%s`\n\n```\n%s\n```\n' "$PINNED_IMAGE" "$patches")
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes "$notes" --verify-tag

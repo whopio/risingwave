@@ -51,7 +51,7 @@ Run **Build patched RisingWave** on this branch (Actions tab, or `gh workflow ru
 
 1. assembles the patched tree and pushes it as tag `<base>-whop.<n>`, with the patch list as the tag message;
 2. builds the image on an ARM runner (prod runs on ARM64 only), checks that it starts, runs `./check` against it, and only then pushes `ghcr.io/whopio/risingwave:<tag>`;
-3. publishes a release with the patch list.
+3. publishes a release with the patch list and the image pinned by digest (`ghcr.io/whopio/risingwave@sha256:...`), the string prod uses.
 
 The image is `linux/arm64` only. On an x86 machine, run it with emulation (`--platform linux/arm64`) or test with the official image of the base release.
 
@@ -83,7 +83,7 @@ Prod should pin the image by digest (`ghcr.io/whopio/risingwave:<tag>@sha256:...
 
 ## Run it
 
-Prod pins the image in the monorepo: `RISINGWAVE_IMAGE` in `infra/pulumi/src/risingwave/nodes.ts`. Set it to `ghcr.io/whopio/risingwave:<tag>`. To go back to the official image, set it back to `ghcr.io/risingwavelabs/risingwave:<base>`. This works because patches change behavior only.
+Prod pins the image in the monorepo: `RISINGWAVE_IMAGE` in `infra/pulumi/src/risingwave/nodes.ts`. Set it to the pinned image from the release page. To go back to the official image, set it back to `ghcr.io/risingwavelabs/risingwave:<base>`. This works because patches change behavior only.
 
 ## Rules for patches
 
